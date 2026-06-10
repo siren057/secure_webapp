@@ -6,14 +6,15 @@ on:
       - main
 
 jobs:
-
-  build-test-scan:
-
+  build-test-scan-publish:
     runs-on: ubuntu-latest
 
-    steps:
+    permissions:
+      contents: read
+      packages: write
 
-      - name: Checkout
+    steps:
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Build image
@@ -33,14 +34,36 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget
+
           wget https://github.com/aquasecurity/trivy/releases/download/v0.71.0/trivy_0.71.0_Linux-64bit.deb
-          sudo dpkg -i trivy_0.71.0_Linux-64bit.deb 
+
+          sudo dpkg -i trivy_0.71.0_Linux-64bit.deb
+
+          trivy --version
 
       - name: Scan image
         run: |
-          trivy image --severity HIGH,CRITICAL --ignore-unfixed testapp
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            testapp
+
+      - name: Login to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Tag image
+        run: |
+          docker tag testapp ghcr.io/${{ github.repository }}:latest
+          docker tag testapp ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+      - name: Publish image
+        run: |
+          docker push ghcr.io/${{ github.repository }}:latest
+          docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
 
       - name: Stop container
         if: always()
         run: |
           docker stop testapp || true
+          docker rm testapp || true
